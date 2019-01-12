@@ -39,6 +39,7 @@ const fetchDocument = async url => {
     url,
     headers: {
       'Accept-Encoding': 'gzip',
+      'CDN-Country-Code': 'US',
     },
   });
 };
