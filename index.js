@@ -34,15 +34,15 @@ const fetchXML = async (...args) => {
   });
 };
 
-const fetchDocument = async url => {
-  return fetch({
-    url,
+const fetchDocument = url =>
+  fetch({
+    ...parseURL(url),
     headers: {
       'Accept-Encoding': 'gzip',
       'CDN-Country-Code': 'US',
+      'User-Agent': 'sitemap-fetch-node',
     },
   });
-};
 
 const run = async () => {
   const start = new Date();
@@ -65,7 +65,7 @@ const run = async () => {
 
   const AllFetches = documents
     .slice(0, LIMIT || documents.length)
-    .map(document => () => fetch(document));
+    .map(document => () => fetchDocument(document));
   const fetches = [];
   while (AllFetches.length) {
     fetches.push(AllFetches.splice(0, CONCURRENT_FETCHES));
