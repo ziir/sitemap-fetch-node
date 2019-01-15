@@ -1,3 +1,4 @@
+const { parse: parseURL, format: formatURL } = require('url');
 const writeFileSync = require('fs').writeFileSync;
 const https = require('https');
 const parse = require('xml2js').parseString;
@@ -9,6 +10,7 @@ const SITEMAP_URL = 'https://www.gandi.net/sitemap.xml';
 const CONCURRENT_FETCHES = 100;
 const LIMIT = 0;
 
+const errors = [];
 const fetch = (...args) =>
   new Promise((resolve, reject) => {
     request(...args, res => {
@@ -18,6 +20,12 @@ const fetch = (...args) =>
         data += chunk;
       });
 
+      if (res.statusCode >= 400) {
+        const url = typeof args[0] === 'object' ? formatURL(args[0]) : args[0];
+        const error = { url, statusCode: res.statusCode };
+        errors.push(error);
+        console.error(`Oops: ${url} [${res.statusCode}]`);
+      }
       res.on('end', () => resolve(data));
     })
       .on('error', reject)
@@ -89,6 +97,10 @@ const run = async () => {
   const average =
     fetchTimings.reduce((acc, current) => acc + current, 0) / fetches.length;
   console.log(`Group fetch average duration: ${average}ms`);
+  if (errors.length) {
+    console.error('The following URLs fetch failed:');
+    console.error(errors.join('\n'));
+  }
 
   console.log('Notifying Google for re-crawl.');
   await fetch(`https://www.google.com/ping?sitemap=${SITEMAP_URL}`);
