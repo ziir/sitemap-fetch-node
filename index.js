@@ -52,26 +52,11 @@ const fetchDocument = url =>
       'CDN-Country-Code': 'US',
       'User-Agent': 'sitemap-fetch-node',
     },
-    agent: https.globalAgent,
   });
 
-const worker = (next) => {
-  console.log('worker created');
-  return async () => {
-    while (true) {
-      const url = next();
-      if (url) {
-         await fetchDocument(url);
-      } else {
-         break;
-      }
-    }
-
-    return;
-  }
-};
-
 const run = async () => {
+  const start = new Date();
+
   console.log(`Fetching sitemap ...`);
   const {
     sitemapindex: { sitemap },
@@ -88,68 +73,49 @@ const run = async () => {
     .map(({ loc }) => new URL(loc[0]).href);
   console.log(`Retrieved ${documents.length} documents URLs.`);
 
-  const start = new Date();
-  const getNext = () => {
-    if (documents.length % 100 == 0) {
-      const elapsed = (new Date()) - start;
-      console.log(`${documents.length} left to get; elapsed = ${elapsed}`);
-    }
-    return documents.pop();
-  };
-
-  const AllFetches = [];
-  for (let i = 0; i < CONCURRENT_FETCHES; i++) {
-    const w = worker(getNext);
-    AllFetches.push(w());
+  const AllFetches = documents
+    .slice(0, LIMIT || documents.length)
+    .map(document => () => fetchDocument(document));
+  const fetches = [];
+  while (AllFetches.length) {
+    fetches.push(AllFetches.splice(0, CONCURRENT_FETCHES));
   }
-  console.log(`all fetches ${AllFetches.length}`);
 
-  await Promise.all(AllFetches);
+  console.log(
+    `Fetching ${documents.length} documents in ${
+      fetches.length
+    } groups with ${CONCURRENT_FETCHES} concurrent fetches.`,
+  );
+  const fetchTimings = await fetches.reduce(async (acc, grouped, idx) => {
+    const timings = await acc;
+    const start = new Date();
+    await Promise.all(grouped.map(f => f()));
+    const end = new Date();
+    const duration = end - start;
+    console.log(`Fetched group ${idx + 1}/${fetches.length} in ${duration}ms`);
+    return [duration].concat(timings);
+  }, Promise.resolve([]));
 
-  return;
+  const average =
+    fetchTimings.reduce((acc, current) => acc + current, 0) / fetches.length;
+  console.log(`Group fetch average duration: ${average}ms`);
+  if (errors.length) {
+    console.error('The following URLs fetch failed:');
+    console.error(errors.map(({ url }) => url).join('\n'));
+    if (RETRY) {
+      console.log('Retrying failed fetches ...');
+      await errors.reduce(async (acc, { url }) => {
+        await acc;
+        await fetchDocument(url);
+      }, Promise.resolve());
+    }
+  }
 
-  //const AllFetches = documents
-  //  .slice(0, LIMIT || documents.length)
-  //  .map(document => () => fetchDocument(document));
-  //const fetches = [];
-  //while (AllFetches.length) {
-  //  fetches.push(AllFetches.splice(0, CONCURRENT_FETCHES));
-  //}
-
-  //console.log(
-  //  `Fetching ${documents.length} documents in ${
-  //    fetches.length
-  //  } groups with ${CONCURRENT_FETCHES} concurrent fetches.`,
-  //);
-  //const fetchTimings = await fetches.reduce(async (acc, grouped, idx) => {
-  //  const timings = await acc;
-  //  await Promise.all(grouped.map(f => f()));
-  //  const end = new Date();
-  //  const duration = end - start;
-  //  console.log(`Fetched group ${idx + 1}/${fetches.length} in ${duration}ms`);
-  //  return [duration].concat(timings);
-  //}, Promise.resolve([]));
-
-  //const average =
-  //  fetchTimings.reduce((acc, current) => acc + current, 0) / fetches.length;
-  //console.log(`Group fetch average duration: ${average}ms`);
-  //if (errors.length) {
-  //  console.error('The following URLs fetch failed:');
-  //  console.error(errors.map(({ url }) => url).join('\n'));
-  //  if (RETRY) {
-  //    console.log('Retrying failed fetches ...');
-  //    await errors.reduce(async (acc, { url }) => {
-  //      await acc;
-  //      await fetchDocument(url);
-  //    }, Promise.resolve());
-  //  }
-  //}
-
-  //if (NOTIFY) {
-  //  console.log('Notifying Google for re-crawl.');
-  //  await fetch(`https://www.google.com/ping?sitemap=${SITEMAP_URL}`);
-  //  console.log('Google notified.');
-  //}
+  if (NOTIFY) {
+    console.log('Notifying Google for re-crawl.');
+    await fetch(`https://www.google.com/ping?sitemap=${SITEMAP_URL}`);
+    console.log('Google notified.');
+  }
 
   const end = new Date();
   console.log(`Finished in ${(end - start) / 1000}s !`);
