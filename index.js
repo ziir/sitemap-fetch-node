@@ -7,8 +7,10 @@ const { Agent, request } = https;
 https.globalAgent = new Agent({ keepAlive: true });
 
 const SITEMAP_URL = 'https://www.gandi.net/sitemap.xml';
-const CONCURRENT_FETCHES = 100;
+const CONCURRENT_FETCHES = 200;
 const LIMIT = 0;
+const RETRY = true;
+const NOTIFY = false;
 
 const errors = [];
 const fetch = (...args) =>
@@ -82,7 +84,7 @@ const run = async () => {
   console.log(
     `Fetching ${documents.length} documents in ${
       fetches.length
-    } groups with ${CONCURRENT_FETCHES} conccurent fetches.`,
+    } groups with ${CONCURRENT_FETCHES} concurrent fetches.`,
   );
   const fetchTimings = await fetches.reduce(async (acc, grouped, idx) => {
     const timings = await acc;
@@ -99,12 +101,21 @@ const run = async () => {
   console.log(`Group fetch average duration: ${average}ms`);
   if (errors.length) {
     console.error('The following URLs fetch failed:');
-    console.error(errors.join('\n'));
+    console.error(errors.map(({ url }) => url).join('\n'));
+    if (RETRY) {
+      console.log('Retrying failed fetches ...');
+      await errors.reduce(async (acc, { url }) => {
+        await acc;
+        await fetchDocument(url);
+      }, Promise.resolve());
+    }
   }
 
-  console.log('Notifying Google for re-crawl.');
-  await fetch(`https://www.google.com/ping?sitemap=${SITEMAP_URL}`);
-  console.log('Google notified.');
+  if (NOTIFY) {
+    console.log('Notifying Google for re-crawl.');
+    await fetch(`https://www.google.com/ping?sitemap=${SITEMAP_URL}`);
+    console.log('Google notified.');
+  }
 
   const end = new Date();
   console.log(`Finished in ${(end - start) / 1000}s !`);
