@@ -4,7 +4,6 @@ const https = require('https');
 const parse = require('xml2js').parseString;
 
 const { Agent, request } = https;
-https.globalAgent = new Agent({ keepAlive: true });
 
 const SITEMAP_URL = 'https://www.gandi.net/sitemap.xml';
 const CONCURRENT_FETCHES = 200;
@@ -13,6 +12,7 @@ const RETRY = true;
 const NOTIFY = false;
 
 const errors = [];
+const keepAliveAgent = new Agent({ keepAlive: true });
 const fetch = (...args) =>
   new Promise((resolve, reject) => {
     request(...args, res => {
@@ -47,6 +47,7 @@ const fetchXML = async (...args) => {
 const fetchDocument = url =>
   fetch({
     ...parseURL(url),
+    agent: keepAliveAgent,
     headers: {
       'Accept-Encoding': 'gzip',
       'CDN-Country-Code': 'US',
