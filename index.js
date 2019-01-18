@@ -80,15 +80,15 @@ const run = async () => {
     .map(({ loc }) => new URL(loc[0]).href);
   console.log(`Retrieved ${documents.length} documents URLs.`);
 
-  const toFetch = documents.slice(0, LIMIT || documents.length);
+  const toFetch = [...new Set(documents.slice(0, LIMIT || documents.length))];
+  console.log(
+    `Fetching ${toFetch.length} documents with ${CONCURRENT_FETCHES} workers.`,
+  );
   const AllFetches = [];
   for (let i = 0; i < CONCURRENT_FETCHES; i++) {
     const w = worker(toFetch.pop.bind(toFetch));
     AllFetches.push(w(toFetch));
   }
-  console.log(
-    `Fetching ${toFetch.length} documents with ${CONCURRENT_FETCHES} workers.`,
-  );
 
   await Promise.all(AllFetches);
 
