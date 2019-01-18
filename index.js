@@ -9,7 +9,7 @@ const SITEMAP_URL = 'https://www.gandi.net/sitemap.xml';
 const CONCURRENT_FETCHES = 200;
 const LIMIT = 0;
 const RETRY = true;
-const NOTIFY = false;
+const NOTIFY = true;
 
 const errors = [];
 const keepAliveAgent = new Agent({ keepAlive: true });
@@ -55,6 +55,12 @@ const fetchDocument = url =>
     },
   });
 
+const worker = next => async () => {
+  while (next()) {
+    await fetchDocument(next());
+  }
+};
+
 const run = async () => {
   const start = new Date();
 
@@ -74,32 +80,18 @@ const run = async () => {
     .map(({ loc }) => new URL(loc[0]).href);
   console.log(`Retrieved ${documents.length} documents URLs.`);
 
-  const AllFetches = documents
-    .slice(0, LIMIT || documents.length)
-    .map(document => () => fetchDocument(document));
-  const fetches = [];
-  while (AllFetches.length) {
-    fetches.push(AllFetches.splice(0, CONCURRENT_FETCHES));
+  const toFetch = documents.slice(0, LIMIT || documents.length);
+  const AllFetches = [];
+  for (let i = 0; i < CONCURRENT_FETCHES; i++) {
+    const w = worker(toFetch.pop.bind(toFetch));
+    AllFetches.push(w(toFetch));
   }
-
   console.log(
-    `Fetching ${documents.length} documents in ${
-      fetches.length
-    } groups with ${CONCURRENT_FETCHES} concurrent fetches.`,
+    `Fetching ${toFetch.length} documents with ${CONCURRENT_FETCHES} workers.`,
   );
-  const fetchTimings = await fetches.reduce(async (acc, grouped, idx) => {
-    const timings = await acc;
-    const start = new Date();
-    await Promise.all(grouped.map(f => f()));
-    const end = new Date();
-    const duration = end - start;
-    console.log(`Fetched group ${idx + 1}/${fetches.length} in ${duration}ms`);
-    return [duration].concat(timings);
-  }, Promise.resolve([]));
 
-  const average =
-    fetchTimings.reduce((acc, current) => acc + current, 0) / fetches.length;
-  console.log(`Group fetch average duration: ${average}ms`);
+  await Promise.all(AllFetches);
+
   if (errors.length) {
     console.error('The following URLs fetch failed:');
     console.error(errors.map(({ url }) => url).join('\n'));
