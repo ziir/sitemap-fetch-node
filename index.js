@@ -55,9 +55,10 @@ const fetchDocument = url =>
     },
   });
 
-const worker = next => async () => {
-  while (next()) {
-    await fetchDocument(next());
+const worker = next_ => async () => {
+  let next;
+  while ((next = next_())) {
+    await fetchDocument(next);
   }
 };
 
