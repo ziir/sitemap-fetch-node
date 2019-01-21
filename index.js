@@ -76,9 +76,25 @@ const run = async () => {
     locations.map(location => fetchXML(location).catch(() => {})),
   );
 
-  const documents = []
+  let documents = []
     .concat(...urlsets.filter(Boolean).map(({ urlset: { url } }) => url))
-    .map(({ loc }) => new URL(loc[0]).href);
+    .map(obj => {
+      const loc = obj.loc[0];
+      const docs = [new URL(loc).href];
+      const links = obj['xhtml:link'];
+      if (Array.isArray(links)) {
+        docs.push(
+          ...links
+            .map(({ $ }) => $.href !== loc && new URL($.href).href)
+            .filter(Boolean),
+        );
+      }
+
+      return docs;
+    });
+
+  documents = [].concat(...documents);
+
   console.log(`Retrieved ${documents.length} documents URLs.`);
 
   const toFetch = [...new Set(documents.slice(0, LIMIT || documents.length))];
