@@ -94,6 +94,10 @@ const run = async () => {
     });
 
   documents = [].concat(...documents);
+  for (let i = documents.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [documents[i], documents[j]] = [documents[j], documents[i]];
+  }
 
   console.log(`Retrieved ${documents.length} documents URLs.`);
 
