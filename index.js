@@ -6,7 +6,7 @@ const parse = require('xml2js').parseString;
 const { Agent, request } = https;
 
 const SITEMAP_URL = 'https://www.gandi.net/sitemap.xml';
-const CONCURRENT_FETCHES = 200;
+const CONCURRENT_FETCHES = 1;
 const LIMIT = 0;
 const RETRY = true;
 const NOTIFY = true;
@@ -34,13 +34,15 @@ const fetch = (...args) =>
       .end();
   });
 
-const fetchXML = async (...args) => {
-  const xml = await fetch(...args);
+const fetchXML = async (url) => {
+  const xml = await fetch(url);
   return new Promise((resolve, reject) => {
     parse(xml, (err, result) => {
       if (err) return reject(err);
       resolve(result);
     });
+  }).catch((err) => {
+    console.error(`Unable to parse XML for ${url}`);
   });
 };
 
@@ -55,10 +57,11 @@ const fetchDocument = url =>
     },
   });
 
-const worker = next_ => async () => {
+const worker = (work, next_) => async (results) => {
   let next;
   while ((next = next_())) {
-    await fetchDocument(next);
+    const result = await work(next);
+    if (results) results.push(result);
   }
 };
 
@@ -71,10 +74,14 @@ const run = async () => {
   } = await fetchXML(SITEMAP_URL);
   const locations = sitemap.map(({ loc }) => loc[0]);
 
-  console.log(`Fetching ${locations.length} sub-sitemaps ...`);
-  const urlsets = await Promise.all(
-    locations.map(location => fetchXML(location).catch(() => {})),
-  );
+  console.log(`Fetching ${locations.length} sub-sitemaps with ${CONCURRENT_FETCHES} workers.`);
+  const sitemapsFetches = [];
+  const urlsets = [];
+  for (let i = 0; i < CONCURRENT_FETCHES; i++) {
+    const w = worker(fetchXML, locations.pop.bind(locations));
+    sitemapsFetches.push(w(urlsets));
+  }
+  await Promise.all(sitemapsFetches);
 
   let documents = []
     .concat(...urlsets.filter(Boolean).map(({ urlset: { url } }) => url))
@@ -107,8 +114,8 @@ const run = async () => {
   );
   const AllFetches = [];
   for (let i = 0; i < CONCURRENT_FETCHES; i++) {
-    const w = worker(toFetch.pop.bind(toFetch));
-    AllFetches.push(w(toFetch));
+    const w = worker(fetchDocument, toFetch.pop.bind(toFetch));
+    AllFetches.push(w());
   }
 
   await Promise.all(AllFetches);
